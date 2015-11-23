@@ -1,0 +1,412 @@
+# program template for Spaceship
+import simplegui
+import math
+import random
+
+# globals for user interface
+WIDTH = 800
+HEIGHT = 600
+score,prev_score = (0,0)
+lives = 3
+time,game_time,prev_game_time = (0,0,0)
+thrust ='OFF'
+started = False
+rocks = set([])
+missiles =set([])
+explosions = set([])
+dset = 1.0
+spawn_time = 0.0
+
+class ImageInfo:
+    def __init__(self, center, size, radius = 0, lifespan = None, animated = False):
+        self.center = center
+        self.size = size
+        self.radius = radius
+        if lifespan:
+            self.lifespan = lifespan
+        else:
+            self.lifespan = float('inf')
+        self.animated = animated
+
+    def get_center(self):
+        return self.center
+
+    def get_size(self):
+        return self.size
+
+    def get_radius(self):
+        return self.radius
+
+    def get_lifespan(self):
+        return self.lifespan
+
+    def get_animated(self):
+        return self.animated
+
+    
+# art assets created by Kim Lathrop, may be freely re-used in non-commercial projects, please credit Kim
+    
+# debris images - debris1_brown.png, debris2_brown.png, debris3_brown.png, debris4_brown.png
+#                 debris1_blue.png, debris2_blue.png, debris3_blue.png, debris4_blue.png, debris_blend.png
+debris_info = ImageInfo([320, 240], [640, 480])
+debris_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/debris3_blue.png")
+
+# nebula images - nebula_brown.png, nebula_blue.png
+nebula_info = ImageInfo([400, 300], [800, 600])
+nebula_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/nebula_blue.f2014.png")
+
+# splash image
+splash_info = ImageInfo([200, 150], [400, 300])
+splash_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/splash.png")
+
+# ship image
+ship_info = ImageInfo([45, 45], [90, 90], 35)
+ship_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/double_ship.png")
+
+
+missile_info = ImageInfo([5,5], [10, 10], 3, 50)
+missile_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/shot1.png")
+
+
+asteroid_info = ImageInfo([45, 45], [90, 90], 40)
+asteroid_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/asteroid_brown.png")
+
+# animated explosion
+explosion_info = ImageInfo([64, 64], [128, 128], 17, 24, True)
+explosion_image = simplegui.load_image("http://commondatastorage.googleapis.com/codeskulptor-assets/lathrop/explosion_orange.png")
+
+# sound for the game
+soundtrack = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/soundtrack.mp3")
+missile_sound = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/missile.mp3")
+missile_sound.set_volume(.5)
+ship_thrust_sound = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/thrust.mp3")
+explosion_sound = simplegui.load_sound("http://commondatastorage.googleapis.com/codeskulptor-assets/sounddogs/explosion.mp3")
+
+
+#shield for the ship
+ship_shield_info = ImageInfo([91, 81], (182, 163), 10, 3)
+ship_shield= simplegui.load_image("https://www.dropbox.com/s/i7a8l2fjbyo8x69/space_ship_shield.gif?dl=1")
+# Functions to handle sub routines and mathematical vactor calculations
+def angle_to_vector(ang):
+    return [math.cos(ang), math.sin(ang)]
+
+def dist(p,q):
+    return math.sqrt((p[0] - q[0]) ** 2+(p[1] - q[1]) ** 2)
+
+def screen_bound(pos):
+    global WIDTH,HEIGHT
+    pos_return =[]
+    if   pos[0] > WIDTH :pos_return.append(0)
+    elif pos[0] < 0   :pos_return.append(WIDTH)   
+    else: pos_return.append(pos[0])        
+    if   pos[1] > HEIGHT: pos_return.append(0)
+    elif pos[1] < 0:   pos_return.append(HEIGHT) 
+    else: pos_return.append(pos[1])   
+    return pos_return
+# Ship class
+class Ship:
+    def __init__(self, pos, vel, angle, image, info):
+        self.pos = [pos[0],pos[1]]
+        self.vel = [vel[0],vel[1]]
+        self.thrust = False
+        self.angle = angle
+        self.angle_vel = 0
+        self.image = image
+        self.image_center = info.get_center()
+        self.image_center1=[info.get_center()[0] + 90,info.get_center()[1]]
+        self.image_size = info.get_size()
+        self.radius = info.get_radius()
+    
+    def refresh(self, pos, vel, angle, image, info):
+        self.thrust = False
+        self.angle_vel = 0
+        self.image = image
+        self.image_center = info.get_center()
+        self.image_center1=[info.get_center()[0] + 90,info.get_center()[1]]
+        self.image_size = info.get_size()
+        self.radius = info.get_radius()
+        return
+        
+    def draw(self,canvas):
+     
+        if self.thrust and started:
+            canvas.draw_image(self.image, self.image_center1, self.image_size, self.pos, self.image_size, self.angle)
+            self.vel[0] = self.vel[0]+ angle_to_vector(self.angle)[0] * 0.25 + self.vel[0] * -0.02
+            self.vel[1] = self.vel[1]+ angle_to_vector(self.angle)[1] *0.25	+ self.vel[1] * -0.02
+            ship_thrust_sound.play()        
+        else:  
+            self.vel[0] *= (1 - 0.01)
+            self.vel[1] *= (1 - 0.01)         
+            ship_thrust_sound.pause()
+            ship_thrust_sound.rewind()
+            canvas.draw_image(self.image, self.image_center, self.image_size, self.pos, self.image_size, self.angle)
+# new method introduced inside the class to update all ship function for keyboard control
+    
+    def key_update(self,button):
+        
+        if button == 'ON':self.thrust = True
+        elif button =='OFF':self.thrust = False
+        elif button =='LEFT_ON':self.angle_vel = 0.1
+        elif button == 'LEFT_OFF':self.angle_vel = 0.0
+        elif button =='RIGHT_ON':self.angle_vel = -0.1
+        elif button == 'RIGHT_OFF':self.angle_vel = 0.0    
+            
+    def update(self):
+        self.angle += self.angle_vel
+        self.pos[0]  += self.vel[0]
+        self.pos[1]  += self.vel[1]
+        self.pos = screen_bound(self.pos)
+        
+    def get_data_for_missile(self):
+        return [self.pos,self.angle,self.vel]
+    
+    def get_data_for_collusion(self):
+        return (self.pos,self.radius)
+# Sprite class
+class Sprite:
+    def __init__(self, pos, vel, ang, ang_vel, image, info, sound = None, bound= None):
+        self.pos = [pos[0],pos[1]]
+        self.vel = [vel[0],vel[1]]
+        self.angle = ang
+        self.angle_vel = ang_vel
+        self.image = image
+        self.image_center = info.get_center()
+        self.image_size = info.get_size()
+        self.radius = info.get_radius()
+        self.lifespan = info.get_lifespan()
+        self.animated = info.get_animated()
+        self.age = 0
+        self.bound= bound
+        if sound:
+            sound.rewind()
+            sound.play()
+   
+    def draw(self, canvas):
+        canvas.draw_image(self.image, self.image_center, self.image_size, self.pos, self.image_size, self.angle)
+    
+    def update(self):
+        self.angle += self.angle_vel
+        self.pos[0] += self.vel[0]
+        self.pos[1] += self.vel[1]
+        if self.bound == None:
+            self.pos = screen_bound(self.pos)
+        if self.animated:
+            self.age += 1.0
+            explosion_index = [self.age % self.image_size[0], (self.age // self.image_size[0]) % self.image_size[1]]
+            self.image_center = [self.image_center[0] + explosion_index[0] * self.image_size[0], 
+                     self.image_center[1] + explosion_index[1] * self.image_size[1]]
+        else:
+            self.age = self.age + 0.45
+            
+        if self.lifespan > +0:
+            if int(self.age) > self.lifespan : 
+                return True
+    
+    def collusion_data(self):
+        return(self.pos,self.radius)
+        
+    def missile_asteroid_collide(self,rocks):
+        remove_rocks = set([])
+        for rock in rocks:
+            rock_pos, rock_radius = rock.collusion_data()
+            if dist(rock_pos,self.pos) <= self.radius + rock_radius:
+                remove_rocks.add(rock)
+                a_explosion = Sprite(rock_pos, [0,0], 0, 0, explosion_image, explosion_info, explosion_sound,'NO')
+                explosions.add(a_explosion)
+        rocks.difference_update(remove_rocks)    
+        if len( remove_rocks )> 0:
+            return True
+    def ship_asteriod_collide(self,my_ship):
+        ship_pos,ship_radius = my_ship.get_data_for_collusion()
+        if dist(ship_pos,self.pos)  <= self.radius + ship_radius - 2:
+            a_explosion = Sprite(ship_pos, [0,0], 0, 0, explosion_image, explosion_info, explosion_sound,'NO')
+            explosions.add(a_explosion)
+            a1_explosion = Sprite(self.pos, [0,0], 0, 0, explosion_image, explosion_info, explosion_sound,'NO')
+            explosions.add(a1_explosion)
+            return True
+# timer handler that spawns a rock    
+def rock_spawner():
+    global rocks, WIDTH, HEIGHT, started,game_time,dset 
+    
+    # setting difficulty parameter
+    if int(game_time) % 60 == 0 and int(game_time) > +0:
+        dset = dset * 1.2
+     
+    alloted_rocks = 12
+    if not started:
+        return
+    # number of rocks spawned increases over time
+    if dset > 1.0:
+        alloted_rocks += (((dset-1.0) * 10) - 1)
+        
+    if len(rocks) > alloted_rocks:
+        return
+    
+    while True:
+        spawn_loc = [random.randrange(50,WIDTH - 100 ),random.randrange(50,HEIGHT -  50)] 
+        spawn_vel_gen = [random.choice([-2,-1,1,2]),random.choice([-2,-1,1,2])]
+        spawn_vel = [spawn_vel_gen[0] * dset,spawn_vel_gen[1] * dset]
+        spawn_ang_vel = random.choice([0.1,-0.1,-0.05,0.05])
+        ship_pos,ship_radius = my_ship.get_data_for_collusion()
+        a_rock = Sprite(spawn_loc, spawn_vel, 0.0,spawn_ang_vel , asteroid_image, asteroid_info)
+    #rock should not spawn too close to the present location of the ship
+        a_rock_pos,a_rock_radius = a_rock.collusion_data()
+        if dist(a_rock_pos,ship_pos) > (ship_radius + a_rock_radius + 100):
+            break
+    rocks.add(a_rock)
+def survive_time():
+    global game_time
+    game_time += 1
+
+def spawn_time():
+    global spawn_time
+    spawn_time += 1
+def key_down_handler(key):
+    global missiles,started
+    if not started:
+        return
+    if key == 38:my_ship.key_update('ON')
+    elif key ==39:my_ship.key_update('LEFT_ON')
+    elif key ==37:my_ship.key_update('RIGHT_ON')
+    elif key ==32:
+        missile_centre = list(my_ship.get_data_for_missile()[0])
+        missile_centre[0] += 50 *  math.cos(my_ship.get_data_for_missile()[1])
+        missile_centre[1] += 50 * math.sin(my_ship.get_data_for_missile()[1])
+        missile_vel_ang = angle_to_vector(my_ship.get_data_for_missile()[1])
+        missile_vel = list(my_ship.get_data_for_missile()[2])
+        missile_vel[0]= missile_vel[0] * 1.5  + missile_vel_ang[0] *7
+        missile_vel[1]= missile_vel[1] * 1.5  + missile_vel_ang[1] *7
+        a_missile = Sprite(missile_centre, missile_vel, 0, 0, missile_image, missile_info, missile_sound,'NO')   
+        missiles.add(a_missile)
+        
+# mouseclick handlers that reset UI and conditions whether splash image is drawn
+def click(pos):
+    global started
+    game_timer.start()
+    soundtrack.rewind()
+    soundtrack.play()
+    center = [WIDTH / 2, HEIGHT / 2]
+    size = splash_info.get_size()
+    inwidth = (center[0] - size[0] / 2) < pos[0] < (center[0] + size[0] / 2)
+    inheight = (center[1] - size[1] / 2) < pos[1] < (center[1] + size[1] / 2)
+    
+    if (not started) and inwidth and inheight:
+        started = True 
+        my_ship.refresh([WIDTH / 2, HEIGHT / 2], [0, 0], 0, ship_image, ship_info)
+        
+def key_up_handler(key):
+    global started
+    if not started:
+        return
+    if key == 38:my_ship.key_update('OFF')
+    elif key ==39:my_ship.key_update('LEFT_OFF')
+    elif key ==37:my_ship.key_update('RIGHT_OFF')
+    
+def run_game(canvas):          
+    global time,score,lives,started,rocks,missiles,thrust,prev_score,game_time,prev_game_time,dset
+    for a_missile in missiles:
+        a_missile.draw(canvas)
+    
+    
+    # update missiles
+    temp_missile_remove = set([])
+    for a_missile in missiles:
+        if a_missile.update() :
+            temp_missile_remove.add(a_missile)
+    missiles.difference_update(temp_missile_remove)         
+        
+    # Check for collition between missile and asteriod
+    temp_missile_remove = set([])
+    for a_missile in missiles: 
+        if a_missile.missile_asteroid_collide(rocks):
+            score = score + 10
+            temp_missile_remove.add(a_missile)
+    missiles.difference_update(temp_missile_remove) 
+    
+    #check for ship collition with rocks
+    temp_rock_remove = set([])
+    for a_rock in rocks:
+        if a_rock.ship_asteriod_collide(my_ship):
+            lives = lives - 1
+            temp_rock_remove.add(a_rock)
+    rocks.difference_update(temp_rock_remove)
+
+    #Game over Scenario
+    if lives < 1:
+        started = False
+        prev_score = score
+        prev_game_time = game_time
+        score,lives,time,dset,game_time, thrust = (0,3,0,1.0,0,'OFF')
+        rocks = set([])
+        missiles =set([])
+        game_timer.stop()
+        soundtrack.pause()
+           
+    # updating ship
+    my_ship.update()  
+    #update score and lives on canvas
+    score_text = "SCORE: " + str(score)
+    lives_text = "LIFE REM: " + str(lives)
+    canvas.draw_text(lives_text, (50, 50), 25, 'White', 'serif')
+    canvas.draw_text(score_text, (650, 50), 25, 'White', 'serif')
+        
+def draw(canvas):
+    global time,score,lives,started,rocks,missiles,prev_score,prev_game_time,explosions
+    
+    # animate background
+    time += 1
+    wtime = (time / 4) % WIDTH
+    center = debris_info.get_center()
+    size = debris_info.get_size()
+    canvas.draw_image(nebula_image, nebula_info.get_center(), nebula_info.get_size(), [WIDTH / 2, HEIGHT / 2], [WIDTH, HEIGHT])
+    canvas.draw_image(debris_image, center, size, (wtime - WIDTH / 2, HEIGHT / 2), (WIDTH, HEIGHT))
+    canvas.draw_image(debris_image, center, size, (wtime + WIDTH / 2, HEIGHT / 2), (WIDTH, HEIGHT))
+            
+    # draw ship and sprites
+    my_ship.draw(canvas)
+    
+    for a_rock in rocks:
+        a_rock.draw(canvas)
+    
+    if started:
+        run_game(canvas)
+    for explosion in explosions:
+        explosion.draw(canvas)
+    
+    for a_rock in rocks:
+        a_rock.update()
+    
+    # update explosions and remove if lifespan completed
+    remove_explosion = set([])
+    for explosion in explosions:
+        if explosion.update():
+            remove_explosion.add(explosion)
+    explosions.difference_update(remove_explosion)
+    
+    # draw splash screen if not started
+    if not started:
+        canvas.draw_image(splash_image, splash_info.get_center(), 
+                          splash_info.get_size(), [WIDTH / 2, HEIGHT / 2], 
+                          splash_info.get_size())
+        if prev_game_time > +0:
+            score_text_1 = "FINAL SCORE: " + str(prev_score) + "  TIME OF PLAY: " + str(prev_game_time) + " SEC"
+            canvas.draw_text(score_text_1, (200, 550), 25, 'White', 'serif')
+            canvas.draw_text("GAME OVER", (280, 400), 40, 'RED', 'serif')
+# initialize frame
+frame = simplegui.create_frame("Asteriod Arcade", WIDTH, HEIGHT)
+
+# initialize ship
+my_ship = Ship([WIDTH / 2, HEIGHT / 2], [0, 0], 0, ship_image, ship_info)
+#my_shield = Sprite([WIDTH / 2, HEIGHT / 2], [0, 0], 0.0,0,ship_shield,ship_shield_info)
+
+# register handlers
+frame.set_draw_handler(draw)
+frame.set_keydown_handler(key_down_handler)
+frame.set_keyup_handler(key_up_handler)
+frame.set_mouseclick_handler(click)
+timer = simplegui.create_timer(1000.0, rock_spawner)
+game_timer = simplegui.create_timer(1000.0, survive_time)
+#spawn_timer = simplegui.create_timer(1000.0,spawn_time)
+# Start frame and timers
+timer.start()
+frame.start()
